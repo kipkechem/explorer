@@ -1,0 +1,5 @@
+{
+  "name": "Kenya County Explorer latest",
+  "description": "An interactive web map of Kenya with a glassmorphic UI and dynamic county-level details. Hover over counties to see their boundaries and click to explore detailed information.",
+  "requestFramePermissions": []
+}
