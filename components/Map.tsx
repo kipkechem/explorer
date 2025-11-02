@@ -1,4 +1,3 @@
-
 import React, { useRef, useEffect } from 'react';
 import type { FeatureCollection } from 'geojson';
 import type { CountyFeature } from '../types';
@@ -9,6 +8,12 @@ interface MapProps {
     counties: FeatureCollection | null;
     selectedCounty: CountyFeature | null;
     onCountySelect: (county: CountyFeature | null) => void;
+    showConstituencies: boolean;
+    setShowConstituencies: (value: boolean) => void;
+    showSubCounties: boolean;
+    setShowSubCounties: (value: boolean) => void;
+    showWards: boolean;
+    setShowWards: (value: boolean) => void;
 }
 
 const colors = {
@@ -17,31 +22,24 @@ const colors = {
     selected: '#FFFFFF',  // Pure white for selection
 };
 
-// Updated to a very light grey for a more subtle shadow effect
-const darkerColors = {
-    base: '#F5F5F5',      // A very light grey shadow
-    hover: '#FAFAFA',     // An even lighter shadow for hover
-    selected: '#FAFAFA',  // An even lighter shadow for selected
-};
-
 const baseStyle = {
-    fillColor: 'url(#baseGradient)',
-    weight: 1.5,
+    fillColor: colors.base,
+    weight: 2.5,
     opacity: 1,
     color: '#BDBDBD',
     fillOpacity: 1,
 };
 
 const hoverStyle = {
-    weight: 3,
-    fillColor: 'url(#hoverGradient)',
+    weight: 4,
+    fillColor: colors.hover,
     color: '#9E9E9E',
     fillOpacity: 1,
 };
 
 const selectedStyle = {
-    fillColor: 'url(#selectedGradient)',
-    weight: 2.5,
+    fillColor: colors.selected,
+    weight: 3.5,
     color: '#9E9E9E',
     fillOpacity: 1,
 };
@@ -58,12 +56,49 @@ const selectedExtrusionStyle = {
     fillOpacity: 0.75,
 };
 
-export const Map: React.FC<MapProps> = ({ counties, selectedCounty, onCountySelect }) => {
+// Styles for optional placeholder layers
+const constituenciesStyle = { color: '#f56565', weight: 2, dashArray: '5, 5', fill: false, interactive: false };
+const subCountiesStyle = { color: '#48bb78', weight: 2, dashArray: '10, 5', fill: false, interactive: false };
+const wardsStyle = { color: '#4299e1', weight: 1.5, dashArray: '2, 3', fill: false, interactive: false };
+
+
+const CheckboxRow: React.FC<{ label: string; color: string; checked: boolean; onChange: (e: React.ChangeEvent<HTMLInputElement>) => void; }> = ({ label, color, checked, onChange }) => (
+    <label className="flex items-center space-x-3 cursor-pointer p-2 rounded-md hover:bg-green-500/20 transition-colors">
+        <div className="relative">
+            <input type="checkbox" className="sr-only" checked={checked} onChange={onChange} />
+            <div className={`w-5 h-5 rounded border-2 ${checked ? `border-${color}-400 bg-${color}-500` : 'border-green-600/50 bg-green-900/30'} transition-all`}></div>
+            {checked && (
+                <svg className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+            )}
+        </div>
+        <span className="text-white/90 text-sm">{label}</span>
+    </label>
+);
+
+
+export const Map: React.FC<MapProps> = ({ 
+    counties, 
+    selectedCounty, 
+    onCountySelect, 
+    showConstituencies, 
+    setShowConstituencies, 
+    showSubCounties, 
+    setShowSubCounties, 
+    showWards, 
+    setShowWards 
+}) => {
     const mapContainerRef = useRef<HTMLDivElement>(null);
     const mapRef = useRef<any | null>(null);
     const geojsonLayerRef = useRef<any | null>(null);
     const extrusionLayerRef = useRef<any | null>(null);
     const tooltipRef = useRef<any | null>(null);
+
+    // Refs for optional layers
+    const constituenciesLayerRef = useRef<any | null>(null);
+    const subCountiesLayerRef = useRef<any | null>(null);
+    const wardsLayerRef = useRef<any | null>(null);
     
     const selectedCountyRef = useRef(selectedCounty);
     useEffect(() => {
@@ -88,63 +123,9 @@ export const Map: React.FC<MapProps> = ({ counties, selectedCounty, onCountySele
         mapRef.current.createPane('extrusionPane');
         const extrusionPane = mapRef.current.getPane('extrusionPane');
         if (extrusionPane) {
-            // Shadow moved to NW to match new SE light source
             extrusionPane.style.transform = 'translate(-3px, -5px)';
             extrusionPane.style.zIndex = 399;
         }
-
-        mapRef.current.whenReady(() => {
-            try {
-                const svg = mapRef.current.getRenderer(mapRef.current);
-                if (svg && svg._container) {
-                    const defs = L.SVG.create('defs');
-
-                    // Gradient from NW (dark) to SE (light)
-                    const createGradient = (id: string, mainColor: string, shadowColor: string, highlightOpacity: number) => {
-                        const gradient = L.SVG.create('linearGradient');
-                        gradient.setAttribute('id', id);
-                        gradient.setAttribute('x1', '0%');
-                        gradient.setAttribute('y1', '0%');
-                        gradient.setAttribute('x2', '100%');
-                        gradient.setAttribute('y2', '100%');
-
-                        const stop1 = L.SVG.create('stop');
-                        stop1.setAttribute('offset', '0%');
-                        stop1.setAttribute('style', `stop-color:${shadowColor}`); // Shadow starts (NW)
-                        
-                        const stop2 = L.SVG.create('stop');
-                        stop2.setAttribute('offset', '68%');
-                        stop2.setAttribute('style', `stop-color:${mainColor}`); // Main body color
-                        
-                        const stop3 = L.SVG.create('stop');
-                        stop3.setAttribute('offset', '80%');
-                        stop3.setAttribute('style', `stop-color:rgba(255,255,255,${highlightOpacity * 0.15})`);
-                        
-                        const stop4 = L.SVG.create('stop');
-                        stop4.setAttribute('offset', '100%');
-                        stop4.setAttribute('style', `stop-color:rgba(255,255,255,${highlightOpacity})`); // Highlight ends (SE)
-                        
-                        gradient.appendChild(stop1);
-                        gradient.appendChild(stop2);
-                        gradient.appendChild(stop3);
-                        gradient.appendChild(stop4);
-                        return gradient;
-                    };
-
-                    const baseGradient = createGradient('baseGradient', colors.base, darkerColors.base, 0.675);
-                    const hoverGradient = createGradient('hoverGradient', colors.hover, darkerColors.hover, 0.7);
-                    const selectedGradient = createGradient('selectedGradient', colors.selected, darkerColors.selected, 0.7);
-                    
-                    defs.appendChild(baseGradient);
-                    defs.appendChild(hoverGradient);
-                    defs.appendChild(selectedGradient);
-                    
-                    svg._container.appendChild(defs);
-                }
-            } catch (e) {
-                console.error("Could not append SVG defs for gradients.", e);
-            }
-        });
 
         tooltipRef.current = L.tooltip({
             sticky: true,
@@ -272,12 +253,49 @@ export const Map: React.FC<MapProps> = ({ counties, selectedCounty, onCountySele
 
     }, [selectedCounty]);
 
+    // Effect for constituencies layer
+    useEffect(() => {
+        if (mapRef.current) {
+            if (constituenciesLayerRef.current) {
+                mapRef.current.removeLayer(constituenciesLayerRef.current);
+            }
+            if (showConstituencies && selectedCounty) {
+                constituenciesLayerRef.current = L.geoJSON(selectedCounty, { style: constituenciesStyle }).addTo(mapRef.current);
+            }
+        }
+    }, [showConstituencies, selectedCounty]);
+
+    // Effect for sub-counties layer
+    useEffect(() => {
+        if (mapRef.current) {
+            if (subCountiesLayerRef.current) {
+                mapRef.current.removeLayer(subCountiesLayerRef.current);
+            }
+            if (showSubCounties && selectedCounty) {
+                subCountiesLayerRef.current = L.geoJSON(selectedCounty, { style: subCountiesStyle }).addTo(mapRef.current);
+            }
+        }
+    }, [showSubCounties, selectedCounty]);
+
+    // Effect for wards layer
+    useEffect(() => {
+        if (mapRef.current) {
+            if (wardsLayerRef.current) {
+                mapRef.current.removeLayer(wardsLayerRef.current);
+            }
+            if (showWards && selectedCounty) {
+                wardsLayerRef.current = L.geoJSON(selectedCounty, { style: wardsStyle }).addTo(mapRef.current);
+            }
+        }
+    }, [showWards, selectedCounty]);
+
+
     return (
-        <div className="relative w-full h-[60vh] lg:h-full p-0 bg-gray-800 border border-gray-700 rounded-2xl shadow-lg overflow-hidden">
+        <div className="relative w-full h-[60vh] lg:h-full p-0 bg-black/30 border border-green-700/50 rounded-2xl shadow-lg overflow-hidden">
             <div ref={mapContainerRef} className="w-full h-full bg-transparent" />
             
             {!counties && (
-                <div className="absolute inset-0 z-[1000] flex flex-col items-center justify-center bg-gray-900/80 transition-opacity duration-300">
+                <div className="absolute inset-0 z-[1000] flex flex-col items-center justify-center bg-black/80 transition-opacity duration-300">
                     <svg className="animate-spin h-10 w-10 text-white mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
@@ -289,11 +307,22 @@ export const Map: React.FC<MapProps> = ({ counties, selectedCounty, onCountySele
             {selectedCounty && (
                 <button
                     onClick={() => onCountySelect(null)}
-                    className="absolute top-4 left-4 px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white font-semibold hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-white/50 transition-all duration-200 z-[1000]"
+                    className="absolute top-4 left-4 px-4 py-2 bg-green-700/50 border border-green-500/60 rounded-lg text-white font-semibold hover:bg-red-600 hover:border-red-400 focus:outline-none focus:ring-2 focus:ring-white/50 transition-all duration-200 z-[1000]"
                     aria-label="Back to full map of Kenya"
                 >
                     Back to Kenya Map
                 </button>
+            )}
+
+            {selectedCounty && (
+                 <div className="absolute top-4 right-4 z-[1000] bg-black/50 backdrop-blur-lg border border-green-600/50 rounded-xl shadow-lg p-3 text-white">
+                    <h3 className="text-md font-semibold mb-1 px-2 text-green-400">Divisions</h3>
+                    <div className="space-y-0">
+                        <CheckboxRow label="Sub-Counties" color="green" checked={showSubCounties} onChange={() => setShowSubCounties(!showSubCounties)} />
+                        <CheckboxRow label="Wards" color="blue" checked={showWards} onChange={() => setShowWards(!showWards)} />
+                        <CheckboxRow label="Constituencies" color="red" checked={showConstituencies} onChange={() => setShowConstituencies(!showConstituencies)} />
+                    </div>
+                </div>
             )}
         </div>
     );
